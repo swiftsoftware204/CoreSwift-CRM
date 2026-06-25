@@ -1,5 +1,8 @@
-# CRM Swift - Task Board
-_Last updated: 2026-06-14_
+# CoreSwift CRM - Task Board
+_Last updated: 2026-06-25_
+
+> ℹ️ **Renamed from CRM Swift → CoreSwift CRM** (June 25, 2026)
+> Future: Drop "CRM" when established, just **CoreSwift**
 
 ## Legend
 - ✅ Done
