@@ -1,0 +1,62 @@
+[package]
+name = "crm-swift"
+version = "0.1.0"
+edition = "2021"
+description = "CRM Swift — Multi-tenant Lead Management Operating System"
+
+[dependencies]
+# Web framework
+axum = { version = "0.7", features = ["macros"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace", "compression-gzip", "set-header"] }
+tokio = { version = "1", features = ["full", "signal"] }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "json", "migrate"] }
+
+# Auth
+jsonwebtoken = "9"
+argon2 = "0.5"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+validator = { version = "0.18", features = ["derive"] }
+
+# Dates
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Cache
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
+
+# Config
+dotenvy = "0.15"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Rate limiting
+governor = "0.6"
+
+# Background jobs
+tokio-cron-scheduler = "0.11"
+
+# Random
+rand = "0.8"
+
+# HTTP client (webhook delivery + n8n)
+reqwest = { version = "0.12", features = ["json"] }
+
+# HTTP headers
+http = "1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

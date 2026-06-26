@@ -1,0 +1,29 @@
+name: Deploy CoreSwift to VPS
+
+on:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Deploy to Hetzner VPS
+      uses: appleboy/ssh-action@master
+      with:
+        host: 178.156.221.18
+        username: root
+        key: ${{ secrets.VPS_SSH_KEY }}
+        script: |
+          cd /opt/swift/crmswift-source
+          git pull origin master
+          docker-compose up -d --build crmswift
+          
+    - name: Update Cloudflare DNS
+      run: |
+        curl -X PUT "https://api.cloudflare.com/client/v4/zones/${{ secrets.CF_ZONE_ID }}/dns_records/${{ secrets.CF_DNS_RECORD_ID_CRM }}" \
+          -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          --data '{"type":"A","name":"crm.funnelswift.net","content":"178.156.221.18","ttl":120,"proxied":true}'
