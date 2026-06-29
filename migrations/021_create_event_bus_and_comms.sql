@@ -2,7 +2,7 @@
 -- Centralized event bus, delayed action engine, and multi-channel communication orchestration
 
 -- Incoming events from all external sources
-CREATE TABLE events (
+CREATE TABLE IF NOT EXISTS events (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     source VARCHAR(100) NOT NULL,
@@ -16,14 +16,14 @@ CREATE TABLE events (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_events_tenant ON events(tenant_id);
-CREATE INDEX idx_events_source ON events(tenant_id, source);
-CREATE INDEX idx_events_type ON events(tenant_id, event_type);
-CREATE INDEX idx_events_entity ON events(tenant_id, entity_type, entity_id);
-CREATE INDEX idx_events_created ON events(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_events_tenant ON events(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_events_source ON events(tenant_id, source);
+CREATE INDEX IF NOT EXISTS idx_events_type ON events(tenant_id, event_type);
+CREATE INDEX IF NOT EXISTS idx_events_entity ON events(tenant_id, entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_events_created ON events(tenant_id, created_at DESC);
 
 -- "If-Not-Then" delayed action engine
-CREATE TABLE delayed_actions (
+CREATE TABLE IF NOT EXISTS delayed_actions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     trigger_event_id UUID REFERENCES events(id) ON DELETE SET NULL,
@@ -39,11 +39,11 @@ CREATE TABLE delayed_actions (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_delayed_actions_tenant ON delayed_actions(tenant_id);
-CREATE INDEX idx_delayed_actions_execute ON delayed_actions(tenant_id, execute_at) WHERE executed = false AND cancelled = false;
+CREATE INDEX IF NOT EXISTS idx_delayed_actions_tenant ON delayed_actions(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_delayed_actions_execute ON delayed_actions(tenant_id, execute_at) WHERE executed = false AND cancelled = false;
 
 -- Multi-channel outbound messages
-CREATE TABLE outbound_messages (
+CREATE TABLE IF NOT EXISTS outbound_messages (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     channel VARCHAR(10) NOT NULL CHECK (channel IN ('email', 'sms')),
@@ -56,12 +56,12 @@ CREATE TABLE outbound_messages (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_outbound_messages_tenant ON outbound_messages(tenant_id);
-CREATE INDEX idx_outbound_messages_status ON outbound_messages(tenant_id, status);
-CREATE INDEX idx_outbound_messages_channel ON outbound_messages(tenant_id, channel);
+CREATE INDEX IF NOT EXISTS idx_outbound_messages_tenant ON outbound_messages(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_outbound_messages_status ON outbound_messages(tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_outbound_messages_channel ON outbound_messages(tenant_id, channel);
 
 -- Message templates with variable substitution
-CREATE TABLE message_templates (
+CREATE TABLE IF NOT EXISTS message_templates (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
@@ -73,10 +73,10 @@ CREATE TABLE message_templates (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_message_templates_tenant ON message_templates(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_message_templates_tenant ON message_templates(tenant_id);
 
 -- In-app notifications (for NotifyUser action)
-CREATE TABLE notifications (
+CREATE TABLE IF NOT EXISTS notifications (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -85,4 +85,4 @@ CREATE TABLE notifications (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_notifications_user ON notifications(tenant_id, user_id, read);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(tenant_id, user_id, read);

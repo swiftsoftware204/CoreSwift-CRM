@@ -2,7 +2,7 @@
 -- Billing plan tiers, tenant subscriptions, affiliates, referrals, and commission payouts
 
 -- Plan tiers table
-CREATE TABLE plans (
+CREATE TABLE IF NOT EXISTS plans (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(100) NOT NULL,
     slug VARCHAR(50) NOT NULL UNIQUE,
@@ -18,7 +18,7 @@ CREATE TABLE plans (
 );
 
 -- Tenant plan subscriptions
-CREATE TABLE tenant_plans (
+CREATE TABLE IF NOT EXISTS tenant_plans (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     plan_id UUID NOT NULL REFERENCES plans(id) ON DELETE RESTRICT,
@@ -34,11 +34,11 @@ CREATE TABLE tenant_plans (
     UNIQUE(tenant_id)
 );
 
-CREATE INDEX idx_tenant_plans_tenant ON tenant_plans(tenant_id);
-CREATE INDEX idx_tenant_plans_plan ON tenant_plans(plan_id);
+CREATE INDEX IF NOT EXISTS idx_tenant_plans_tenant ON tenant_plans(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_tenant_plans_plan ON tenant_plans(plan_id);
 
 -- Affiliates
-CREATE TABLE affiliates (
+CREATE TABLE IF NOT EXISTS affiliates (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -53,12 +53,12 @@ CREATE TABLE affiliates (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_affiliates_tenant ON affiliates(tenant_id);
-CREATE INDEX idx_affiliates_code ON affiliates(code);
-CREATE UNIQUE INDEX idx_affiliates_user_tenant ON affiliates(tenant_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_affiliates_tenant ON affiliates(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_affiliates_code ON affiliates(code);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_affiliates_user_tenant ON affiliates(tenant_id, user_id);
 
 -- Referrals
-CREATE TABLE referrals (
+CREATE TABLE IF NOT EXISTS referrals (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     affiliate_id UUID NOT NULL REFERENCES affiliates(id) ON DELETE CASCADE,
     referred_tenant_id UUID REFERENCES tenants(id) ON DELETE SET NULL,
@@ -71,11 +71,11 @@ CREATE TABLE referrals (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_referrals_affiliate ON referrals(affiliate_id);
-CREATE INDEX idx_referrals_status ON referrals(status);
+CREATE INDEX IF NOT EXISTS idx_referrals_affiliate ON referrals(affiliate_id);
+CREATE INDEX IF NOT EXISTS idx_referrals_status ON referrals(status);
 
 -- Commission payouts
-CREATE TABLE commission_payouts (
+CREATE TABLE IF NOT EXISTS commission_payouts (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     affiliate_id UUID NOT NULL REFERENCES affiliates(id) ON DELETE CASCADE,
     amount DECIMAL(12,2) NOT NULL,
@@ -86,7 +86,7 @@ CREATE TABLE commission_payouts (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_commission_payouts_affiliate ON commission_payouts(affiliate_id);
+CREATE INDEX IF NOT EXISTS idx_commission_payouts_affiliate ON commission_payouts(affiliate_id);
 
 -- Default plan tiers (Free + paid tiers)
 INSERT INTO plans (id, name, slug, description, price_monthly, price_yearly, features, checkout_url, sort_order)

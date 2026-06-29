@@ -16,7 +16,7 @@ pub async fn create(State(s): State<AppState>, Extension(c): Extension<Claims>, 
     let lt = r.list_type.unwrap_or_else(|| "static".into());
     if lt != "static" && lt != "dynamic" { return Err(AppError::Validation("list_type must be static/dynamic".into())); }
     let rules = r.rules.map(|r| serde_json::to_value(r).unwrap_or(serde_json::Value::Array(vec![])));
-    Ok((StatusCode::CREATED, Json(json!(sqlx::query_as::<_,List>("INSERT INTO lists(id,tenant_id,name,description,list_type,rules) VALUES($1,$2,$3,$4,$5::list_type,$6) RETURNING *")
+    Ok((StatusCode::CREATED, Json(json!(sqlx::query_as::<_,List>("INSERT INTO lists(id,tenant_id,name,description,list_type,rules) VALUES($1,$2,$3,$4,$5,$6) RETURNING *")
         .bind(Uuid::new_v4()).bind(t).bind(&r.name).bind(&r.description).bind(&lt).bind(&rules).fetch_one(&s.db).await?))))
 }
 pub async fn get(State(s): State<AppState>, Extension(c): Extension<Claims>, Path(id): Path<Uuid>) -> ApiResult<impl IntoResponse> {

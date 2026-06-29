@@ -51,14 +51,15 @@ pub async fn execute_chat_action(
     let tenant_id = Uuid::parse_str(&c.tid).map_err(|_| AppError::Unauthorized)?;
     let is_admin = c.role == "owner" || c.role == "admin";
 
-    match r.intent.as_str() {
-        "create_affiliate" => handle_create_affiliate(&s, tenant_id, r.params).await,
-        "create_affiliate_in_funnelswift" => handle_create_affiliate_funnelswift(&s, tenant_id, r.params).await,
-        "create_tenant_account" => handle_create_tenant_account(&s, r.params).await,
-        "build_campaign" => handle_build_campaign(&s, tenant_id, r.params).await,
-        "sync_funnelswift_tag" => handle_sync_funnelswift_tag(&s, tenant_id, r.params).await,
+    let result: Result<axum::response::Response, AppError> = match r.intent.as_str() {
+        "create_affiliate" => handle_create_affiliate(&s, tenant_id, r.params).await.map(IntoResponse::into_response),
+        "create_affiliate_in_funnelswift" => handle_create_affiliate_funnelswift(&s, tenant_id, r.params).await.map(IntoResponse::into_response),
+        "create_tenant_account" => handle_create_tenant_account(&s, r.params).await.map(IntoResponse::into_response),
+        "build_campaign" => handle_build_campaign(&s, tenant_id, r.params).await.map(IntoResponse::into_response),
+        "sync_funnelswift_tag" => handle_sync_funnelswift_tag(&s, tenant_id, r.params).await.map(IntoResponse::into_response),
         _ => Err(AppError::NotFound(format!("Unknown intent: {}", r.intent))),
-    }
+    };
+    result
 }
 
 /// GET /api/admin/chat-action/intents — List all available chat actions
@@ -374,7 +375,7 @@ async fn handle_create_affiliate_funnelswift(
     .await?;
 
     // Step 3: Create product in affiliate board
-    let product = sqlx::query_as::<_, serde_json::Value>(
+    let product = sqlx::query_as::<_, (serde_json::Value,)>(
         r#"INSERT INTO affiliate_products (id, tenant_id, name, price, commission_rate, commission_type)
            VALUES ($1, $2, $3, $4, $5, 'percentage') RETURNING *"#
     )
@@ -387,7 +388,7 @@ async fn handle_create_affiliate_funnelswift(
     .await?;
 
     // Step 4: Try to create or get a tag for FunnelSwift
-    let tag = sqlx::query_as::<_, serde_json::Value>(
+    let tag = sqlx::query_as::<_, (serde_json::Value,)>(
         "SELECT * FROM tags WHERE tenant_id = $1 AND name = $2"
     )
     .bind(new_tenant_id)
@@ -395,10 +396,10 @@ async fn handle_create_affiliate_funnelswift(
     .fetch_optional(&s.db)
     .await?;
 
-    let tag_id = if let Some(t) = tag {
-        t.get("id").cloned()
+    let tag_id: Option<serde_json::Value> = if let Some(ref t) = tag {
+        t.0.get("id").cloned()
     } else {
-        let new_tag = sqlx::query_as::<_, serde_json::Value>(
+        let new_tag = sqlx::query_as::<_, (serde_json::Value,)>(
             "INSERT INTO tags (id, tenant_id, name, color) VALUES ($1, $2, $3, $4) RETURNING id"
         )
         .bind(Uuid::new_v4())
@@ -407,19 +408,19 @@ async fn handle_create_affiliate_funnelswift(
         .bind("#10B981") // green
         .fetch_one(&s.db)
         .await?;
-        Some(new_tag.get("id").cloned())
+        new_tag.0.get("id").cloned()
     };
 
     // Update product with tag
     if let Some(tid) = tag_id {
         let _ = sqlx::query("UPDATE affiliate_products SET tag_id = $1 WHERE id = $2")
             .bind(tid.as_str().and_then(|s| Uuid::parse_str(s).ok()))
-            .bind(product.get("id").and_then(|v| v.as_str()).and_then(|s| Uuid::parse_str(s).ok()))
+            .bind(product.0.get("id").and_then(|v| v.as_str()).and_then(|s| Uuid::parse_str(s).ok()))
             .execute(&s.db).await;
     }
 
     // Step 5: Trigger Ada campaign trigger for welcome
-    let ada_trigger = sqlx::query_as::<_, serde_json::Value>(
+    let ada_trigger = sqlx::query_as::<_, (serde_json::Value,)>(
         r#"INSERT INTO ada_campaign_triggers (id, tenant_id, name, trigger_on, ada_campaign_id, schedule_delay_minutes)
            VALUES ($1, $2, $3, 'affiliate_activated', 'welcome-affiliate', 0) RETURNING *"#
     )
@@ -623,14 +624,14 @@ async fn handle_build_campaign(
     }
 
     // 1. Create campaign
-    let campaign = sqlx::query_as::<_, serde_json::Value>(
+    let campaign = sqlx::query_as::<_, (serde_json::Value,)>(
         r#"INSERT INTO email_campaigns (id, tenant_id, name, description, status, created_by)
            VALUES ($1, $2, $3, $4, 'draft', NULL) RETURNING *"#
     )
     .bind(Uuid::new_v4()).bind(tenant_id).bind(campaign_name).bind(description)
     .fetch_one(&s.db).await?;
 
-    let campaign_id_str = campaign.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let campaign_id_str = campaign.0.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let campaign_id = Uuid::parse_str(&campaign_id_str).unwrap();
 
     // 2. Create steps
@@ -641,7 +642,7 @@ async fn handle_build_campaign(
         let body = step.get("body").and_then(|v| v.as_str()).unwrap_or("");
         let delay = step.get("delay_days").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
 
-        let s = sqlx::query_as::<_, serde_json::Value>(
+        let s = sqlx::query_as::<_, (serde_json::Value,)>(
             r#"INSERT INTO email_campaign_steps (id, campaign_id, step_order, template_name, subject, body, delay_days)
                VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *"#
         )
@@ -652,11 +653,11 @@ async fn handle_build_campaign(
     }
 
     // 3. Handle FunnelSwift tag
-    let mut tag_result: Option<serde_json::Value> = None;
+    let mut tag_result: Option<(serde_json::Value,)> = None;
     let mut funnelswift_result: Option<String> = None;
 
     if let Some(tag_name) = funnelswift_tag {
-        let tag = sqlx::query_as::<_, serde_json::Value>(
+        let tag = sqlx::query_as::<_, (serde_json::Value,)>(
             r#"INSERT INTO tags (id, tenant_id, name, color, is_active)
                VALUES ($1, $2, $3, '#3B82F6', true)
                ON CONFLICT (tenant_id, name) DO UPDATE SET is_active = true
@@ -666,7 +667,7 @@ async fn handle_build_campaign(
         .fetch_one(&s.db).await?;
         tag_result = Some(tag);
 
-        if let Some(tid_val) = tag_result.as_ref().and_then(|t| t.get("id")).and_then(|v| v.as_str()).and_then(|s| Uuid::parse_str(s).ok()) {
+        if let Some(tid_val) = tag_result.as_ref().and_then(|t| t.0.get("id")).and_then(|v| v.as_str()).and_then(|s| Uuid::parse_str(s).ok()) {
             let _ = sqlx::query(
                 r#"INSERT INTO email_campaign_triggers (id, campaign_id, tag_id, trigger_type)
                    VALUES ($1, $2, $3, 'tag_assigned')
@@ -691,9 +692,9 @@ async fn handle_build_campaign(
     ).bind(campaign_id).execute(&s.db).await;
 
     let step_summary: Vec<String> = created_steps.iter().enumerate().map(|(i, s)| {
-        let tn = s.get("template_name").and_then(|v| v.as_str()).unwrap_or("");
-        let subj = s.get("subject").and_then(|v| v.as_str()).unwrap_or("(no subject)");
-        let delay = s.get("delay_days").and_then(|v| v.as_i64()).unwrap_or(0);
+        let tn = s.0.get("template_name").and_then(|v| v.as_str()).unwrap_or("");
+        let subj = s.0.get("subject").and_then(|v| v.as_str()).unwrap_or("(no subject)");
+        let delay = s.0.get("delay_days").and_then(|v| v.as_i64()).unwrap_or(0);
         format!("  {}. {} — '{}' — {} day(s) delay", i + 1, tn, subj, delay)
     }).collect();
 
@@ -854,4 +855,208 @@ async fn sync_tag_to_funnelswift_internal(
     }
 }
 
-fn generate_code
+// ═══════════════════════════════════════════════════════════════════
+// Legacy API admin handlers — impersonation, health check, admin CRUD
+// ═══════════════════════════════════════════════════════════════════
+
+/// GET /api/admin/health — simple health check (no auth)
+pub async fn health_check(
+    State(s): State<AppState>,
+) -> ApiResult<impl IntoResponse> {
+    let db_ok = sqlx::query_scalar::<_, i32>("SELECT 1")
+        .fetch_one(&s.db)
+        .await
+        .is_ok();
+
+    Ok(Json(json!({
+        "status": if db_ok { "healthy" } else { "degraded" },
+        "database": if db_ok { "connected" } else { "error" },
+        "service": "crm-swift"
+    })))
+}
+
+/// POST /api/admin/impersonate — create a JWT for a different tenant (agency_admin only)
+pub async fn impersonate(
+    Extension(c): Extension<Claims>,
+    State(s): State<AppState>,
+    Json(req): Json<serde_json::Value>,
+) -> ApiResult<impl IntoResponse> {
+    if c.role != "owner" && c.role != "agency_admin" {
+        return Err(AppError::Forbidden);
+    }
+
+    let target_tenant_id = req.get("tenant_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| AppError::BadRequest("tenant_id is required".into()))?;
+
+    use crate::auth::middleware;
+    let now = chrono::Utc::now().timestamp() as usize;
+    let imp_claims = Claims {
+        sub: c.sub.clone(),
+        tid: target_tenant_id.to_string(),
+        role: "impersonated".to_string(),
+        exp: now + 900, // 15 minutes
+        iat: now,
+    };
+
+    let token = middleware::create_access_token(&imp_claims, &s.config.jwt_secret)?;
+
+    Ok(Json(json!({
+        "impersonation_token": token,
+        "expires_in": 900,
+        "token_type": "Bearer",
+        "message": "Full tenant switch"
+    })))
+}
+
+/// POST /api/admin/stop-impersonation — instruction to restore admin token
+pub async fn stop_impersonation(
+    Extension(_c): Extension<Claims>,
+) -> ApiResult<impl IntoResponse> {
+    Ok(Json(json!({
+        "status": "impersonation_stopped",
+        "note": "Drop impersonation token and restore original admin token"
+    })))
+}
+
+/// GET /api/admin/portfolio-companies — list ALL portfolio companies (agency_admin)
+pub async fn list_all_portfolio_companies(
+    State(s): State<AppState>,
+    Extension(c): Extension<Claims>,
+) -> ApiResult<impl IntoResponse> {
+    if c.role != "owner" && c.role != "agency_admin" {
+        return Err(AppError::Forbidden);
+    }
+
+    #[derive(sqlx::FromRow, serde::Serialize)]
+    struct PortfolioRow {
+        id: Uuid,
+        tenant_id: Option<Uuid>,
+        name: String,
+        slug: Option<String>,
+        email: Option<String>,
+        description: Option<String>,
+        is_active: bool,
+        created_at: chrono::NaiveDateTime,
+    }
+
+    let companies = sqlx::query_as::<_, PortfolioRow>(
+        r#"SELECT id, tenant_id, name, slug, email, description, is_active, created_at
+           FROM portfolio_companies ORDER BY name ASC"#,
+    )
+    .fetch_all(&s.db)
+    .await?;
+
+    Ok(Json(json!({ "portfolio_companies": companies })))
+}
+
+/// GET /api/admin/tenants — list ALL tenants (agency_admin)
+pub async fn list_all_tenants(
+    State(s): State<AppState>,
+    Extension(c): Extension<Claims>,
+) -> ApiResult<impl IntoResponse> {
+    if c.role != "owner" && c.role != "agency_admin" {
+        return Err(AppError::Forbidden);
+    }
+
+    use sqlx::Row;
+    let rows = sqlx::query(
+        r#"SELECT t.id::text, t.name, t.slug, (SELECT u.email FROM users u WHERE u.tenant_id = t.id AND u.role = 'owner' LIMIT 1) AS email, t.is_active, t.created_at::text as created_at FROM tenants t ORDER BY t.created_at DESC"#,
+    )
+    .fetch_all(&s.db)
+    .await?;
+
+    let tenants: Vec<serde_json::Value> = rows.iter().map(|r| {
+        json!({
+            "id": r.try_get::<&str,_>("id").unwrap_or(""),
+            "name": r.try_get::<Option<String>,_>("name").ok().flatten(),
+            "slug": r.try_get::<Option<String>,_>("slug").ok().flatten(),
+            "email": r.try_get::<Option<String>,_>("email").ok().flatten(),
+            "is_active": r.try_get::<bool,_>("is_active").unwrap_or(true),
+            "created_at": r.try_get::<&str,_>("created_at").unwrap_or(""),
+        })
+    }).collect();
+
+    Ok(Json(json!({ "tenants": tenants })))
+}
+
+/// POST /api/admin/portfolio-sync — cross-app sync: create tenant + user + portfolio entry
+pub async fn cross_app_sync(
+    State(s): State<AppState>,
+    Json(req): Json<serde_json::Value>,
+) -> ApiResult<impl IntoResponse> {
+    let name = req.get("name").and_then(|v| v.as_str()).unwrap_or("Company").to_string();
+    let email = req.get("email").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let description = req.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+    if email.is_empty() {
+        return Err(AppError::BadRequest("email is required".into()));
+    }
+
+    let existing = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE email = $1")
+        .bind(&email)
+        .fetch_one(&s.db)
+        .await
+        .unwrap_or(0);
+
+    if existing > 0 {
+        return Err(AppError::Duplicate(format!("A user with email {} already exists", email)));
+    }
+
+    let tenant_id = Uuid::new_v4();
+    let tenant_slug = name.to_lowercase().replace(' ', "-");
+
+    sqlx::query("INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)")
+        .bind(tenant_id)
+        .bind(&name)
+        .bind(&tenant_slug)
+        .execute(&s.db)
+        .await?;
+
+    let user_id = Uuid::new_v4();
+    let generated_password = Uuid::new_v4().to_string().replace("-", "").chars().take(12).collect::<String>();
+    use argon2::{Argon2, PasswordHasher};
+    use argon2::password_hash::SaltString;
+    use argon2::password_hash::rand_core::OsRng;
+    let salt = SaltString::generate(&mut OsRng);
+    let argon2 = Argon2::default();
+    let password_hash = argon2
+        .hash_password(generated_password.as_bytes(), &salt)
+        .map_err(|e| AppError::Hash(e.to_string()))?
+        .to_string();
+
+    let now = chrono::Utc::now().naive_utc();
+    sqlx::query(
+        "INSERT INTO users (id, email, password_hash, name, role, tenant_id, is_active, created_at, updated_at) VALUES ($1, $2, $3, $4, 'company_admin', $5, true, $6, $7)"
+    )
+    .bind(user_id)
+    .bind(&email)
+    .bind(&password_hash)
+    .bind(&name)
+    .bind(tenant_id)
+    .bind(now)
+    .bind(now)
+    .execute(&s.db)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO portfolio_companies (id, tenant_id, name, slug, email, description, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW()) ON CONFLICT (id) DO UPDATE SET name = $3, email = $5, description = $6, updated_at = NOW()"
+    )
+    .bind(Uuid::new_v4())
+    .bind(tenant_id)
+    .bind(&name)
+    .bind(&tenant_slug)
+    .bind(&email)
+    .bind(&description)
+    .execute(&s.db)
+    .await?;
+
+    Ok(Json(json!({
+        "status": "synced",
+        "name": name,
+        "email": email,
+        "tenant_id": tenant_id.to_string(),
+        "user_id": user_id.to_string(),
+        "password": generated_password
+    })))
+}

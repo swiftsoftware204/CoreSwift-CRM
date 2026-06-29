@@ -14,8 +14,8 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/", axum::routing::get(handlers::list))
         .route("/", axum::routing::post(handlers::create))
         .route("/search", axum::routing::get(handlers::search))
-        .route("/{id}", axum::routing::get(handlers::get))
-        .route("/{id}", axum::routing::patch(handlers::update))
-        .route("/{id}", axum::routing::delete(handlers::delete))
+        .route("/:id", axum::routing::get(handlers::get))
+        .route("/:id", axum::routing::patch(handlers::update))
+        .route("/:id", axum::routing::delete(handlers::delete))
         .layer(middleware::from_fn_with_state(state.clone(), crate::auth::middleware::auth_middleware))
 }

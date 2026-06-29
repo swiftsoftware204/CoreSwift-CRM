@@ -1,7 +1,7 @@
 -- 017_create_webhooks.sql
 -- Webhook endpoints for outbound event notifications
 
-CREATE TABLE webhook_endpoints (
+CREATE TABLE IF NOT EXISTS webhook_endpoints (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
@@ -17,5 +17,5 @@ CREATE TABLE webhook_endpoints (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_webhook_endpoints_tenant ON webhook_endpoints(tenant_id);
-CREATE INDEX idx_webhook_endpoints_events ON webhook_endpoints USING GIN(events);
+CREATE INDEX IF NOT EXISTS idx_webhook_endpoints_tenant ON webhook_endpoints(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_webhook_endpoints_events ON webhook_endpoints USING GIN(events);

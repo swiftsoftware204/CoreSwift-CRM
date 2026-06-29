@@ -34,15 +34,15 @@ pub async fn list(
         let list = sqlx::query_as::<_, EmailCampaign>(
             "SELECT * FROM email_campaigns WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3"
         ).bind(tid).bind(per_page).bind(offset).fetch_all(&s.db).await?;
-        let t: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM email_campaigns WHERE tenant_id = $1")
-            .bind(tid).fetch_one(&s.db).await?.unwrap_or(0);
+        let t: i64 = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM email_campaigns WHERE tenant_id = $1")
+            .bind(tid).fetch_one(&s.db).await.unwrap_or(0);
         (list, t)
     } else {
         let list = sqlx::query_as::<_, EmailCampaign>(
             "SELECT * FROM email_campaigns WHERE tenant_id = $1 AND status = $2 ORDER BY created_at DESC LIMIT $3 OFFSET $4"
         ).bind(tid).bind(status_filter).bind(per_page).bind(offset).fetch_all(&s.db).await?;
-        let t: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM email_campaigns WHERE tenant_id = $1 AND status = $2")
-            .bind(tid).bind(status_filter).fetch_one(&s.db).await?.unwrap_or(0);
+        let t: i64 = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM email_campaigns WHERE tenant_id = $1 AND status = $2")
+            .bind(tid).bind(status_filter).fetch_one(&s.db).await.unwrap_or(0);
         (list, t)
     };
 
@@ -95,7 +95,7 @@ pub async fn create(
 
     if let Some(ref tag_name) = r.funnelswift_tag {
         // Create tag in CRM Swift
-        let tag = sqlx::query_as::<_, serde_json::Value>(
+        let tag = sqlx::query_as::<_, (serde_json::Value,)>(
             r#"INSERT INTO tags (id, tenant_id, name, color, is_active)
                VALUES ($1, $2, $3, '#3B82F6', true)
                ON CONFLICT (tenant_id, name) DO UPDATE SET is_active = true
@@ -103,7 +103,7 @@ pub async fn create(
         )
         .bind(Uuid::new_v4()).bind(tid).bind(tag_name)
         .fetch_one(&s.db).await?;
-        tag_id = tag.get("id").and_then(|v| v.as_str()).and_then(|s| Uuid::from_str(s).ok());
+        tag_id = tag.0.get("id").and_then(|v| v.as_str()).and_then(|s| Uuid::from_str(s).ok());
 
         // Create campaign trigger for this tag
         if let Some(tid_val) = tag_id {
@@ -203,9 +203,9 @@ pub async fn activate(
     let tid = parse_tenant(&c)?;
 
     // Verify campaign has steps
-    let step_count: i64 = sqlx::query_scalar(
+    let step_count: i64 = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM email_campaign_steps WHERE campaign_id = $1"
-    ).bind(id).fetch_one(&s.db).await?.unwrap_or(0);
+    ).bind(id).fetch_one(&s.db).await.unwrap_or(0);
 
     if step_count == 0 {
         return Err(AppError::Validation("Campaign must have at least one step before activating".into()));
@@ -250,10 +250,10 @@ pub async fn add_step(
     let tid = parse_tenant(&c)?;
 
     // Get the max step_order for this campaign
-    let max_order: i32 = sqlx::query_scalar(
+    let max_order: i32 = sqlx::query_scalar::<_, i32>(
         "SELECT COALESCE(MAX(step_order), 0) FROM email_campaign_steps esc
          JOIN email_campaigns ec ON ec.id = esc.campaign_id WHERE ec.tenant_id = $1"
-    ).bind(tid).fetch_one(&s.db).await?.unwrap_or(0);
+    ).bind(tid).fetch_one(&s.db).await.unwrap_or(0);
 
     let order = r.step_order.unwrap_or(max_order + 1);
 
@@ -402,9 +402,9 @@ pub async fn enroll_contact(
     let tid = parse_tenant(&c)?;
 
     // Get total steps
-    let total_steps: i32 = sqlx::query_scalar(
+    let total_steps: i32 = sqlx::query_scalar::<_, i32>(
         "SELECT COUNT(*) FROM email_campaign_steps WHERE campaign_id = $1"
-    ).bind(id).fetch_one(&s.db).await?.unwrap_or(0) as i32;
+    ).bind(id).fetch_one(&s.db).await.unwrap_or(0) as i32;
 
     if total_steps == 0 {
         return Err(AppError::Validation("Campaign has no steps".into()));
@@ -519,7 +519,7 @@ pub async fn build_campaign(
 
     if let Some(ref tag_name) = r.funnelswift_tag {
         // Create or find the tag in CRM Swift
-        let tag = sqlx::query_as::<_, serde_json::Value>(
+        let tag = sqlx::query_as::<_, (serde_json::Value,)>(
             r#"INSERT INTO tags (id, tenant_id, name, color, is_active)
                VALUES ($1, $2, $3, '#3B82F6', true)
                ON CONFLICT (tenant_id, name) DO UPDATE SET is_active = true
@@ -527,7 +527,7 @@ pub async fn build_campaign(
         )
         .bind(Uuid::new_v4()).bind(tid).bind(tag_name)
         .fetch_one(&s.db).await?;
-        tag_id = tag.get("id").and_then(|v| v.as_str()).and_then(|s| Uuid::from_str(s).ok());
+        tag_id = tag.0.get("id").and_then(|v| v.as_str()).and_then(|s| Uuid::from_str(s).ok());
 
         // Link tag to campaign as trigger
         if let Some(tid_val) = tag_id {

@@ -7,6 +7,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 use serde_json::json;
+use rand::Rng;
 
 /// Route a webhook action to the correct handler.
 /// Returns (status_code, response_body_json).
@@ -24,7 +25,7 @@ pub async fn route_action(
         "contacts.list" => {
             let limit = params.and_then(|p| p.get("limit").and_then(|v| v.as_i64())).unwrap_or(50);
             let offset = params.and_then(|p| p.get("offset").and_then(|v| v.as_i64())).unwrap_or(0);
-            let contacts = sqlx::query_as::<_, serde_json::Value>(
+            let contacts = sqlx::query_as::<_, (serde_json::Value,)>(
                 "SELECT id, first_name, last_name, email, phone, company_id, score, created_at FROM contacts WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3"
             )
             .bind(tenant_id).bind(limit as i32).bind(offset as i32)
@@ -51,19 +52,19 @@ pub async fn route_action(
             let id = params.and_then(|p| p.get("id").and_then(|v| v.as_str()))
                 .ok_or("contact id required")?;
             let uid = Uuid::parse_str(id).map_err(|_| "invalid uuid".to_string())?;
-            let contact = sqlx::query_as::<_, serde_json::Value>(
+            let contact = sqlx::query_as::<_, (serde_json::Value,)>(
                 "SELECT * FROM contacts WHERE id = $1 AND tenant_id = $2"
             )
             .bind(uid).bind(tenant_id)
             .fetch_optional(db).await
             .map_err(|e| format!("DB error: {}", e))?
             .ok_or("contact not found".to_string())?;
-            Ok((200, contact))
+            Ok((200, contact.0))
         }
 
         // ── Tags ──
         "tags.list" => {
-            let tags = sqlx::query_as::<_, serde_json::Value>(
+            let tags = sqlx::query_as::<_, (serde_json::Value,)>(
                 "SELECT id, name, color, category_id FROM tags WHERE tenant_id = $1 ORDER BY name"
             )
             .bind(tenant_id)
@@ -90,7 +91,7 @@ pub async fn route_action(
 
         // ── Lists ──
         "lists.list" => {
-            let lists = sqlx::query_as::<_, serde_json::Value>(
+            let lists = sqlx::query_as::<_, (serde_json::Value,)>(
                 "SELECT id, name, list_type, created_at FROM lists WHERE tenant_id = $1 ORDER BY name"
             )
             .bind(tenant_id)
@@ -102,7 +103,7 @@ pub async fn route_action(
             let list_id = params.and_then(|p| p.get("id").and_then(|v| v.as_str()))
                 .ok_or("list id required")?;
             let lid = Uuid::parse_str(list_id).map_err(|_| "invalid uuid".to_string())?;
-            let members = sqlx::query_as::<_, serde_json::Value>(
+            let members = sqlx::query_as::<_, (serde_json::Value,)>(
                 "SELECT c.id, c.first_name, c.last_name, c.email FROM list_members lm JOIN contacts c ON c.id = lm.contact_id WHERE lm.list_id = $1 AND lm.tenant_id = $2"
             )
             .bind(lid).bind(tenant_id)
@@ -113,8 +114,8 @@ pub async fn route_action(
 
         // ── Pipelines & Opportunities ──
         "pipelines.list" => {
-            let pipelines = sqlx::query_as::<_, serde_json::Value>(
-                "SELECT id, name, stages FROM pipelines WHERE tenant_id = $1 ORDER BY name"
+            let pipelines = sqlx::query_as::<_, (serde_json::Value,)>(
+                "SELECT p.id, p.name, COALESCE((SELECT json_agg(json_build_object('id', ps.id, 'name', ps.name, 'color', ps.color, 'position', ps.position, 'probability', ps.probability)) FROM pipeline_stages ps WHERE ps.pipeline_id = p.id ORDER BY ps.position), '[]'::json) AS stages FROM pipelines p WHERE p.tenant_id = $1 ORDER BY p.name"
             )
             .bind(tenant_id)
             .fetch_all(db).await
@@ -125,7 +126,7 @@ pub async fn route_action(
             let pipeline_id = params.and_then(|p| p.get("pipeline_id").and_then(|v| v.as_str()))
                 .ok_or("pipeline_id required")?;
             let pid = Uuid::parse_str(pipeline_id).map_err(|_| "invalid uuid".to_string())?;
-            let opportunities = sqlx::query_as::<_, serde_json::Value>(
+            let opportunities = sqlx::query_as::<_, (serde_json::Value,)>(
                 "SELECT o.id, o.name, o.value, o.stage_id, ps.name as stage_name, o.contact_id, o.created_at FROM opportunities o JOIN pipeline_stages ps ON ps.id = o.stage_id WHERE o.pipeline_id = $1 AND o.tenant_id = $2 ORDER BY o.created_at DESC"
             )
             .bind(pid).bind(tenant_id)
@@ -136,7 +137,7 @@ pub async fn route_action(
 
         // ── Affiliates ──
         "affiliates.profile" => {
-            let profile = sqlx::query_as::<_, serde_json::Value>(
+            let profile = sqlx::query_as::<_, (serde_json::Value,)>(
                 "SELECT id, code, commission_rate, commission_type, total_earned, total_paid, referral_count, is_active FROM affiliates WHERE tenant_id = $1"
             )
             .bind(tenant_id)
@@ -145,7 +146,7 @@ pub async fn route_action(
             Ok((200, json!({"profile": profile})))
         }
         "affiliates.referrals" => {
-            let referrals = sqlx::query_as::<_, serde_json::Value>(
+            let referrals = sqlx::query_as::<_, (serde_json::Value,)>(
                 "SELECT r.*, a.code as affiliate_code FROM referrals r JOIN affiliates a ON a.id = r.affiliate_id WHERE a.tenant_id = $1 ORDER BY r.created_at DESC LIMIT 50"
             )
             .bind(tenant_id)
@@ -154,7 +155,7 @@ pub async fn route_action(
             Ok((200, json!({"referrals": referrals})))
         }
         "affiliates.stats" => {
-            let stats = sqlx::query_as::<_, serde_json::Value>(
+            let stats = sqlx::query_as::<_, (serde_json::Value,)>(
                 "SELECT id, total_earned, total_paid, referral_count FROM affiliates WHERE tenant_id = $1"
             )
             .bind(tenant_id)
@@ -165,7 +166,7 @@ pub async fn route_action(
 
         // ── Affiliate Products ──
         "affiliate_products.list" => {
-            let products = sqlx::query_as::<_, serde_json::Value>(
+            let products = sqlx::query_as::<_, (serde_json::Value,)>(
                 "SELECT ap.*, t.name as tag_name FROM affiliate_products ap LEFT JOIN tags t ON t.id = ap.tag_id WHERE ap.tenant_id = $1 AND ap.is_active = true ORDER BY ap.sort_order ASC"
             )
             .bind(tenant_id)
@@ -177,7 +178,7 @@ pub async fn route_action(
             let affiliate_id = params.and_then(|p| p.get("affiliate_id").and_then(|v| v.as_str()))
                 .and_then(|s| Uuid::parse_str(s).ok())
                 .ok_or("affiliate_id required")?;
-            let products = sqlx::query_as::<_, serde_json::Value>(
+            let products = sqlx::query_as::<_, (serde_json::Value,)>(
                 "SELECT ap.*, aps.is_active as promoting, aps.promo_link
                  FROM affiliate_product_selections aps
                  JOIN affiliate_products ap ON ap.id = aps.product_id
@@ -255,7 +256,7 @@ pub async fn route_action(
                 .ok_or("contact_id required")?;
             let cid = Uuid::parse_str(contact_id).map_err(|_| "invalid uuid".to_string())?;
             // Return basic score info from DB (full AI assessment requires LLM call)
-            let score = sqlx::query_as::<_, serde_json::Value>(
+            let score = sqlx::query_as::<_, (serde_json::Value,)>(
                 "SELECT * FROM scores WHERE contact_id = $1 AND tenant_id = $2"
             )
             .bind(cid).bind(tenant_id)
@@ -308,7 +309,7 @@ pub async fn route_action(
 
         // ── Billing ──
         "billing.plans" => {
-            let plans = sqlx::query_as::<_, serde_json::Value>(
+            let plans = sqlx::query_as::<_, (serde_json::Value,)>(
                 "SELECT id, name, slug, description, price_monthly, price_yearly, features, sort_order FROM plans WHERE is_active = true ORDER BY sort_order"
             )
             .fetch_all(db).await
@@ -316,7 +317,7 @@ pub async fn route_action(
             Ok((200, json!({"plans": plans})))
         }
         "billing.credits" => {
-            let credits = sqlx::query_as::<_, serde_json::Value>(
+            let credits = sqlx::query_as::<_, (serde_json::Value,)>(
                 "SELECT credits_remaining, credits_used, plan_name FROM v_credit_summary WHERE tenant_id = $1"
             )
             .bind(tenant_id)
@@ -327,7 +328,7 @@ pub async fn route_action(
 
         // ── Automation ──
         "automation.list" => {
-            let rules = sqlx::query_as::<_, serde_json::Value>(
+            let rules = sqlx::query_as::<_, (serde_json::Value,)>(
                 "SELECT id, name, trigger_type, action_type, is_active, created_at FROM automation_rules WHERE tenant_id = $1 ORDER BY name"
             )
             .bind(tenant_id)
@@ -350,9 +351,7 @@ pub async fn route_action(
             let mut sql = String::from(
                 "SELECT bp.id, bp.business_name, bp.unit, bp.current_state, bp.subscription_active, "
             );
-            sql.push_str("bp.last_activity_at, bp.created_at, "
-                "u.email, u.phone, u.first_name, u.last_name "
-                "FROM business_profiles bp JOIN users u ON u.id = bp.user_id WHERE u.tenant_id = $1");
+            sql.push_str("bp.last_activity_at, bp.created_at, u.email, u.phone, u.first_name, u.last_name FROM business_profiles bp JOIN users u ON u.id = bp.user_id WHERE u.tenant_id = $1");
 
             let mut binds: Vec<String> = vec![];
             let mut param_idx = 2;
@@ -370,7 +369,7 @@ pub async fn route_action(
 
             // We need a dynamic query builder — use sqlx::query_as with the raw SQL and bind each param
             // For simplicity with variable bind counts, we fetch raw rows
-            let mut query = sqlx::query_as::<_, serde_json::Value>(&sql)
+            let mut query = sqlx::query_as::<_, (serde_json::Value,)>(&sql)
                 .bind(tenant_id);
             for b in &binds {
                 query = query.bind(b);
@@ -443,11 +442,8 @@ pub async fn route_action(
                 .ok_or("listing id (business_profile_id) required")?;
             let profile_id = Uuid::parse_str(id).map_err(|_| "invalid uuid".to_string())?;
 
-            let listing = sqlx::query_as::<_, serde_json::Value>(
-                "SELECT bp.*, u.email, u.phone, u.first_name, u.last_name, u.name as user_name "
-                "FROM business_profiles bp "
-                "JOIN users u ON u.id = bp.user_id "
-                "WHERE bp.id = $1 AND u.tenant_id = $2"
+            let listing = sqlx::query_as::<_, (serde_json::Value,)>(
+                "SELECT bp.*, u.email, u.phone, u.first_name, u.last_name, u.name as user_name FROM business_profiles bp JOIN users u ON u.id = bp.user_id WHERE bp.id = $1 AND u.tenant_id = $2"
             )
             .bind(profile_id).bind(tenant_id)
             .fetch_optional(db).await
@@ -455,7 +451,7 @@ pub async fn route_action(
             .ok_or("listing not found".to_string())?;
 
             // Also grab recent event logs
-            let events = sqlx::query_as::<_, serde_json::Value>(
+            let events = sqlx::query_as::<_, (serde_json::Value,)>(
                 "SELECT id, event_name, metadata, created_at FROM event_logs WHERE business_profile_id = $1 ORDER BY created_at DESC LIMIT 20"
             )
             .bind(profile_id)
@@ -547,20 +543,16 @@ pub async fn route_action(
             let profile_id = Uuid::parse_str(id).map_err(|_| "invalid uuid".to_string())?;
 
             // Reviews are stored as event_logs with event_name = 'review.*'
-            let reviews = sqlx::query_as::<_, serde_json::Value>(
-                "SELECT id, event_name, metadata, created_at FROM event_logs "
-                "WHERE business_profile_id = $1 AND event_name LIKE 'review.%' "
-                "ORDER BY created_at DESC LIMIT 50"
+            let reviews = sqlx::query_as::<_, (serde_json::Value,)>(
+                "SELECT id, event_name, metadata, created_at FROM event_logs WHERE business_profile_id = $1 AND event_name LIKE 'review.%' ORDER BY created_at DESC LIMIT 50"
             )
             .bind(profile_id)
             .fetch_all(db).await
             .map_err(|e| format!("DB error: {}", e))?;
 
             // Also look for any review-like metadata in the listing's prepopulated_data
-            let prepopulated = sqlx::query_as::<_, serde_json::Value>(
-                "SELECT data, preview_link, source_url FROM prepopulated_data "
-                "WHERE entity_id = $1 AND entity_type = 'business_profile' AND data ->> 'review' IS NOT NULL "
-                "ORDER BY created_at DESC LIMIT 10"
+            let prepopulated = sqlx::query_as::<_, (serde_json::Value,)>(
+                "SELECT data, preview_link, source_url FROM prepopulated_data  WHERE entity_id = $1 AND entity_type = 'business_profile' AND data ->> 'review' IS NOT NULL  ORDER BY created_at DESC LIMIT 10"
             )
             .bind(profile_id)
             .fetch_all(db).await
@@ -579,31 +571,23 @@ pub async fn route_action(
                 .ok_or("listing id (business_profile_id) required")?;
             let profile_id = Uuid::parse_str(id).map_err(|_| "invalid uuid".to_string())?;
 
-            let pending = sqlx::query_as::<_, serde_json::Value>(
-                "SELECT id, scheduled_for, channel, template_slug, created_at FROM followup_queue "
-                "WHERE business_profile_id = $1 AND is_executed = false AND is_cancelled = false "
-                "ORDER BY scheduled_for ASC"
+            let pending = sqlx::query_as::<_, (serde_json::Value,)>(
+                "SELECT id, scheduled_for, channel, template_slug, created_at FROM followup_queue  WHERE business_profile_id = $1 AND is_executed = false AND is_cancelled = false  ORDER BY scheduled_for ASC"
             )
             .bind(profile_id)
             .fetch_all(db).await
             .map_err(|e| format!("DB error: {}", e))?;
 
-            let executed = sqlx::query_as::<_, serde_json::Value>(
-                "SELECT id, scheduled_for, channel, template_slug, executed_at, created_at FROM followup_queue "
-                "WHERE business_profile_id = $1 AND is_executed = true "
-                "ORDER BY executed_at DESC NULLS LAST LIMIT 50"
+            let executed = sqlx::query_as::<_, (serde_json::Value,)>(
+                "SELECT id, scheduled_for, channel, template_slug, executed_at, created_at FROM followup_queue  WHERE business_profile_id = $1 AND is_executed = true  ORDER BY executed_at DESC NULLS LAST LIMIT 50"
             )
             .bind(profile_id)
             .fetch_all(db).await
             .map_err(|e| format!("DB error: {}", e))?;
 
             // Also pull checklist progress if any
-            let checklist = sqlx::query_as::<_, serde_json::Value>(
-                "SELECT ci.id, ct.name as template_name, ci.current_stage, ci.completed, ci.started_at, ci.completed_at "
-                "FROM checklist_instances ci "
-                "JOIN checklist_templates ct ON ct.id = ci.template_id "
-                "WHERE ci.tenant_id = $1 AND ci.entity_id = $2 "
-                "ORDER BY ci.created_at DESC LIMIT 5"
+            let checklist = sqlx::query_as::<_, (serde_json::Value,)>(
+                "SELECT ci.id, ct.name as template_name, ci.current_stage, ci.completed, ci.started_at, ci.completed_at  FROM checklist_instances ci  JOIN checklist_templates ct ON ct.id = ci.template_id  WHERE ci.tenant_id = $1 AND ci.entity_id = $2  ORDER BY ci.created_at DESC LIMIT 5"
             )
             .bind(tenant_id).bind(profile_id)
             .fetch_all(db).await
@@ -622,71 +606,46 @@ pub async fn route_action(
 
             // Total listings by state (summary)
             let state_breakdown = if let Some(u) = unit {
-                sqlx::query_as::<_, serde_json::Value>(
-                    "SELECT current_state, COUNT(*) as count FROM business_profiles bp "
-                    "JOIN users u2 ON u2.id = bp.user_id "
-                    "WHERE u2.tenant_id = $1 AND bp.unit = $2 "
-                    "GROUP BY current_state ORDER BY count DESC"
+                sqlx::query_as::<_, (serde_json::Value,)>(
+                    "SELECT current_state, COUNT(*) as count FROM business_profiles bp  JOIN users u2 ON u2.id = bp.user_id  WHERE u2.tenant_id = $1 AND bp.unit = $2  GROUP BY current_state ORDER BY count DESC"
                 )
                 .bind(tenant_id).bind(u)
                 .fetch_all(db).await
             } else {
-                sqlx::query_as::<_, serde_json::Value>(
-                    "SELECT bp.current_state, COUNT(*) as count FROM business_profiles bp "
-                    "JOIN users u2 ON u2.id = bp.user_id "
-                    "WHERE u2.tenant_id = $1 "
-                    "GROUP BY bp.current_state ORDER BY count DESC"
+                sqlx::query_as::<_, (serde_json::Value,)>(
+                    "SELECT bp.current_state, COUNT(*) as count FROM business_profiles bp  JOIN users u2 ON u2.id = bp.user_id  WHERE u2.tenant_id = $1  GROUP BY bp.current_state ORDER BY count DESC"
                 )
                 .bind(tenant_id)
                 .fetch_all(db).await
             }.map_err(|e| format!("DB error: {}", e))?;
 
             // Listings by unit
-            let unit_breakdown = sqlx::query_as::<_, serde_json::Value>(
-                "SELECT bp.unit, COUNT(*) as count FROM business_profiles bp "
-                "JOIN users u2 ON u2.id = bp.user_id "
-                "WHERE u2.tenant_id = $1 "
-                "GROUP BY bp.unit ORDER BY count DESC"
+            let unit_breakdown = sqlx::query_as::<_, (serde_json::Value,)>(
+                "SELECT bp.unit, COUNT(*) as count FROM business_profiles bp  JOIN users u2 ON u2.id = bp.user_id  WHERE u2.tenant_id = $1  GROUP BY bp.unit ORDER BY count DESC"
             )
             .bind(tenant_id)
             .fetch_all(db).await
             .map_err(|e| format!("DB error: {}", e))?;
 
             // Recent event volume (last 30 days)
-            let event_volume = sqlx::query_as::<_, serde_json::Value>(
-                "SELECT el.event_name, DATE(el.created_at) as day, COUNT(*) as count "
-                "FROM event_logs el "
-                "JOIN business_profiles bp ON bp.id = el.business_profile_id "
-                "JOIN users u2 ON u2.id = bp.user_id "
-                "WHERE u2.tenant_id = $1 AND el.created_at > NOW() - INTERVAL '30 days' "
-                "GROUP BY el.event_name, DATE(el.created_at) "
-                "ORDER BY day DESC, count DESC LIMIT 100"
+            let event_volume = sqlx::query_as::<_, (serde_json::Value,)>(
+                "SELECT el.event_name, DATE(el.created_at) as day, COUNT(*) as count  FROM event_logs el  JOIN business_profiles bp ON bp.id = el.business_profile_id  JOIN users u2 ON u2.id = bp.user_id  WHERE u2.tenant_id = $1 AND el.created_at > NOW() - INTERVAL '30 days'  GROUP BY el.event_name, DATE(el.created_at)  ORDER BY day DESC, count DESC LIMIT 100"
             )
             .bind(tenant_id)
             .fetch_all(db).await
             .map_err(|e| format!("DB error: {}", e))?;
 
             // Followup queue stats
-            let followup_stats = sqlx::query_as::<_, serde_json::Value>(
-                "SELECT "
-                "COUNT(*) FILTER (WHERE is_executed = false AND is_cancelled = false) as pending, "
-                "COUNT(*) FILTER (WHERE is_executed = true) as executed, "
-                "COUNT(*) FILTER (WHERE is_cancelled = true) as cancelled "
-                "FROM followup_queue fq "
-                "JOIN business_profiles bp ON bp.id = fq.business_profile_id "
-                "JOIN users u2 ON u2.id = bp.user_id "
-                "WHERE u2.tenant_id = $1"
+            let followup_stats = sqlx::query_as::<_, (serde_json::Value,)>(
+                "SELECT  COUNT(*) FILTER (WHERE is_executed = false AND is_cancelled = false) as pending,  COUNT(*) FILTER (WHERE is_executed = true) as executed,  COUNT(*) FILTER (WHERE is_cancelled = true) as cancelled  FROM followup_queue fq  JOIN business_profiles bp ON bp.id = fq.business_profile_id  JOIN users u2 ON u2.id = bp.user_id  WHERE u2.tenant_id = $1"
             )
             .bind(tenant_id)
             .fetch_one(db).await
             .map_err(|e| format!("DB error: {}", e))?;
 
             // Subscription stats
-            let subscription_stats = sqlx::query_as::<_, serde_json::Value>(
-                "SELECT subscription_active, COUNT(*) as count FROM business_profiles bp "
-                "JOIN users u2 ON u2.id = bp.user_id "
-                "WHERE u2.tenant_id = $1 "
-                "GROUP BY subscription_active"
+            let subscription_stats = sqlx::query_as::<_, (serde_json::Value,)>(
+                "SELECT subscription_active, COUNT(*) as count FROM business_profiles bp  JOIN users u2 ON u2.id = bp.user_id  WHERE u2.tenant_id = $1  GROUP BY subscription_active"
             )
             .bind(tenant_id)
             .fetch_all(db).await
@@ -705,8 +664,7 @@ pub async fn route_action(
         "directory.health" => {
             // 1. Total profiles
             let total_profiles: (i64,) = sqlx::query_as(
-                "SELECT COUNT(*) FROM business_profiles bp "
-                "JOIN users u2 ON u2.id = bp.user_id WHERE u2.tenant_id = $1"
+                "SELECT COUNT(*) FROM business_profiles bp  JOIN users u2 ON u2.id = bp.user_id WHERE u2.tenant_id = $1"
             )
             .bind(tenant_id)
             .fetch_one(db).await
@@ -714,10 +672,7 @@ pub async fn route_action(
 
             // 2. Event logs count (recent 24h)
             let events_24h: (i64,) = sqlx::query_as(
-                "SELECT COUNT(*) FROM event_logs el "
-                "JOIN business_profiles bp ON bp.id = el.business_profile_id "
-                "JOIN users u2 ON u2.id = bp.user_id "
-                "WHERE u2.tenant_id = $1 AND el.created_at > NOW() - INTERVAL '24 hours'"
+                "SELECT COUNT(*) FROM event_logs el  JOIN business_profiles bp ON bp.id = el.business_profile_id  JOIN users u2 ON u2.id = bp.user_id  WHERE u2.tenant_id = $1 AND el.created_at > NOW() - INTERVAL '24 hours'"
             )
             .bind(tenant_id)
             .fetch_one(db).await
@@ -725,10 +680,7 @@ pub async fn route_action(
 
             // 3. Pending followups (stale checks)
             let stale_followups: (i64,) = sqlx::query_as(
-                "SELECT COUNT(*) FROM followup_queue fq "
-                "JOIN business_profiles bp ON bp.id = fq.business_profile_id "
-                "JOIN users u2 ON u2.id = bp.user_id "
-                "WHERE u2.tenant_id = $1 AND fq.is_executed = false AND fq.is_cancelled = false AND fq.scheduled_for < NOW() - INTERVAL '1 hour'"
+                "SELECT COUNT(*) FROM followup_queue fq  JOIN business_profiles bp ON bp.id = fq.business_profile_id  JOIN users u2 ON u2.id = bp.user_id  WHERE u2.tenant_id = $1 AND fq.is_executed = false AND fq.is_cancelled = false AND fq.scheduled_for < NOW() - INTERVAL '1 hour'"
             )
             .bind(tenant_id)
             .fetch_one(db).await
@@ -736,21 +688,15 @@ pub async fn route_action(
 
             // 4. Profiles stuck in 'lead_captured' for > 7 days
             let stuck_leads: (i64,) = sqlx::query_as(
-                "SELECT COUNT(*) FROM business_profiles bp "
-                "JOIN users u2 ON u2.id = bp.user_id "
-                "WHERE u2.tenant_id = $1 AND bp.current_state = 'lead_captured' AND bp.created_at < NOW() - INTERVAL '7 days'"
+                "SELECT COUNT(*) FROM business_profiles bp  JOIN users u2 ON u2.id = bp.user_id  WHERE u2.tenant_id = $1 AND bp.current_state = 'lead_captured' AND bp.created_at < NOW() - INTERVAL '7 days'"
             )
             .bind(tenant_id)
             .fetch_one(db).await
             .map_err(|e| format!("DB error: {}", e))?;
 
             // 5. Recent errors logged as events
-            let recent_errors = sqlx::query_as::<_, serde_json::Value>(
-                "SELECT el.id, el.event_name, el.metadata, el.created_at FROM event_logs el "
-                "JOIN business_profiles bp ON bp.id = el.business_profile_id "
-                "JOIN users u2 ON u2.id = bp.user_id "
-                "WHERE u2.tenant_id = $1 AND el.event_name LIKE 'error.%' "
-                "ORDER BY el.created_at DESC LIMIT 20"
+            let recent_errors = sqlx::query_as::<_, (serde_json::Value,)>(
+                "SELECT el.id, el.event_name, el.metadata, el.created_at FROM event_logs el  JOIN business_profiles bp ON bp.id = el.business_profile_id  JOIN users u2 ON u2.id = bp.user_id  WHERE u2.tenant_id = $1 AND el.event_name LIKE 'error.%'  ORDER BY el.created_at DESC LIMIT 20"
             )
             .bind(tenant_id)
             .fetch_all(db).await
@@ -871,7 +817,7 @@ pub async fn route_action(
             Ok((200, json!({"revoked": true})))
         }
         "webhooks.list" => {
-            let webhooks = sqlx::query_as::<_, serde_json::Value>(
+            let webhooks = sqlx::query_as::<_, (serde_json::Value,)>(
                 "SELECT id, name,\n  CONCAT(LEFT(webhook_token, 4), REPEAT('*', GREATEST(0, LENGTH(webhook_token) - 8)), RIGHT(webhook_token, 4)) as masked_token,\n  allowed_actions, created_at, last_used_at, is_active\n FROM automation_webhooks WHERE tenant_id = $1 ORDER BY created_at DESC"
             )
             .bind(tenant_id)
@@ -885,7 +831,7 @@ pub async fn route_action(
             let pipeline_id = params.and_then(|p| p.get("pipeline_id").and_then(|v| v.as_str()))
                 .ok_or("pipeline_id required")?;
             let pid = Uuid::parse_str(pipeline_id).map_err(|_| "invalid uuid".to_string())?;
-            let stages = sqlx::query_as::<_, serde_json::Value>(
+            let stages = sqlx::query_as::<_, (serde_json::Value,)>(
                 "SELECT id, pipeline_id, name, sort_order, color, created_at FROM pipeline_stages WHERE pipeline_id = $1 ORDER BY sort_order"
             )
             .bind(pid)
@@ -935,7 +881,7 @@ pub async fn route_action(
             Ok((201, json!({"id": uid, "email": email, "name": name, "role": role, "temp_password": temp_password, "invited": true})))
         }
         "users.list" => {
-            let users = sqlx::query_as::<_, serde_json::Value>(
+            let users = sqlx::query_as::<_, (serde_json::Value,)>(
                 "SELECT id, email, name, role, is_active, created_at FROM users WHERE tenant_id = $1 ORDER BY created_at"
             )
             .bind(tenant_id)
@@ -946,8 +892,8 @@ pub async fn route_action(
 
         // ── Tenants ──
         "tenants.settings" => {
-            let tenant = sqlx::query_as::<_, serde_json::Value>(
-                "SELECT id, name, slug, plan, plan_id FROM tenants WHERE id = $1"
+            let tenant = sqlx::query_as::<_, (serde_json::Value,)>(
+                "SELECT id, name, slug, NULL::text AS plan, NULL::uuid AS plan_id FROM tenants WHERE id = $1"
             )
             .bind(tenant_id)
             .fetch_optional(db).await
@@ -959,7 +905,7 @@ pub async fn route_action(
             .bind(tenant_id)
             .fetch_one(db).await
             .map_err(|e| format!("DB error: {}", e))?;
-            let plan_info = sqlx::query_as::<_, serde_json::Value>(
+            let plan_info = sqlx::query_as::<_, (serde_json::Value,)>(
                 "SELECT p.id as plan_id, p.name, p.slug, p.price_monthly, p.price_yearly, tp.status, tp.billing_cycle\n FROM tenant_plans tp JOIN plans p ON p.id = tp.plan_id WHERE tp.tenant_id = $1"
             )
             .bind(tenant_id)
@@ -979,7 +925,7 @@ pub async fn route_action(
                 .ok_or("contact_id required")?;
             let cid = Uuid::parse_str(contact_id).map_err(|_| "invalid contact_id".to_string())?;
             // Read contact fields for scoring
-            let contact = sqlx::query_as::<_, serde_json::Value>(
+            let contact = sqlx::query_as::<_, (serde_json::Value,)>(
                 "SELECT id, first_name, last_name, email, phone, company_id, score FROM contacts WHERE id = $1 AND tenant_id = $2"
             )
             .bind(cid).bind(tenant_id)
@@ -987,10 +933,10 @@ pub async fn route_action(
             .map_err(|e| format!("DB error: {}", e))?
             .ok_or("contact not found".to_string())?;
             // Simple scoring: base 50 + 10 if has email + 10 if has phone + 10 if has company_id + 20 if existing score > 0
-            let has_email = contact.get("email").and_then(|v| v.as_str()).map(|s| !s.is_empty()).unwrap_or(false);
-            let has_phone = contact.get("phone").and_then(|v| v.as_str()).map(|s| !s.is_empty()).unwrap_or(false);
-            let has_company = contact.get("company_id").and_then(|v| v.as_str()).map(|s| !s.is_empty()).unwrap_or(false);
-            let existing_score = contact.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let has_email = contact.0.get("email").and_then(|v| v.as_str()).map(|s| !s.is_empty()).unwrap_or(false);
+            let has_phone = contact.0.get("phone").and_then(|v| v.as_str()).map(|s| !s.is_empty()).unwrap_or(false);
+            let has_company = contact.0.get("company_id").and_then(|v| v.as_str()).map(|s| !s.is_empty()).unwrap_or(false);
+            let existing_score = contact.0.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0);
             let mut score: i32 = 50;
             if has_email { score += 10; }
             if has_phone { score += 10; }
@@ -1014,14 +960,14 @@ pub async fn route_action(
             .fetch_one(db).await
             .map_err(|e| format!("DB error: {}", e))?;
             // Contacts by tag
-            let by_tag = sqlx::query_as::<_, serde_json::Value>(
+            let by_tag = sqlx::query_as::<_, (serde_json::Value,)>(
                 "SELECT t.id, t.name, COUNT(ta.entity_id) as count\n FROM tags t\n LEFT JOIN tag_assignments ta ON ta.tag_id = t.id AND ta.entity_type = 'contact'\n WHERE t.tenant_id = $1\n GROUP BY t.id, t.name ORDER BY count DESC"
             )
             .bind(tenant_id)
             .fetch_all(db).await
             .map_err(|e| format!("DB error: {}", e))?;
             // Contacts created over the last 30 days, grouped by day
-            let by_day = sqlx::query_as::<_, serde_json::Value>(
+            let by_day = sqlx::query_as::<_, (serde_json::Value,)>(
                 "SELECT DATE(created_at) as day, COUNT(*) as count\n FROM contacts\n WHERE tenant_id = $1 AND created_at > NOW() - INTERVAL '30 days'\n GROUP BY DATE(created_at) ORDER BY day"
             )
             .bind(tenant_id)
@@ -1039,14 +985,14 @@ pub async fn route_action(
             let limit = params.and_then(|p| p.get("limit").and_then(|v| v.as_i64())).unwrap_or(50);
             let entity_filter = params.and_then(|p| p.get("entity_type").and_then(|v| v.as_str()));
             let entries = if let Some(entity_type) = entity_filter {
-                sqlx::query_as::<_, serde_json::Value>(
-                    "SELECT id, entity_type, entity_id, action, performed_by, metadata, created_at\n FROM audit_log\n WHERE tenant_id = $1 AND entity_type = $2\n ORDER BY created_at DESC LIMIT $3"
+                sqlx::query_as::<_, (serde_json::Value,)>(
+                    "SELECT id, entity_type, entity_id, action, performed_by, metadata, created_at\n FROM audit_logs\n WHERE tenant_id = $1 AND entity_type = $2\n ORDER BY created_at DESC LIMIT $3"
                 )
                 .bind(tenant_id).bind(entity_type).bind(limit as i32)
                 .fetch_all(db).await
             } else {
-                sqlx::query_as::<_, serde_json::Value>(
-                    "SELECT id, entity_type, entity_id, action, performed_by, metadata, created_at\n FROM audit_log\n WHERE tenant_id = $1\n ORDER BY created_at DESC LIMIT $2"
+                sqlx::query_as::<_, (serde_json::Value,)>(
+                    "SELECT id, entity_type, entity_id, action, performed_by, metadata, created_at\n FROM audit_logs\n WHERE tenant_id = $1\n ORDER BY created_at DESC LIMIT $2"
                 )
                 .bind(tenant_id).bind(limit as i32)
                 .fetch_all(db).await
@@ -1068,7 +1014,7 @@ pub async fn route_action(
             let pattern = format!("%{}%", q);
             let mut results = serde_json::Map::new();
             if entities.contains(&"contacts") {
-                let contacts = sqlx::query_as::<_, serde_json::Value>(
+                let contacts = sqlx::query_as::<_, (serde_json::Value,)>(
                     "SELECT id, first_name, last_name, email, phone, score FROM contacts\n WHERE tenant_id = $1 AND (email ILIKE $2 OR first_name ILIKE $2 OR last_name ILIKE $2 OR CONCAT(first_name, ' ', last_name) ILIKE $2)\n LIMIT 20"
                 )
                 .bind(tenant_id).bind(&pattern)
@@ -1077,7 +1023,7 @@ pub async fn route_action(
                 results.insert("contacts".to_string(), json!(contacts));
             }
             if entities.contains(&"tags") {
-                let tags = sqlx::query_as::<_, serde_json::Value>(
+                let tags = sqlx::query_as::<_, (serde_json::Value,)>(
                     "SELECT id, name, color FROM tags WHERE tenant_id = $1 AND name ILIKE $2 LIMIT 20"
                 )
                 .bind(tenant_id).bind(&pattern)
@@ -1086,7 +1032,7 @@ pub async fn route_action(
                 results.insert("tags".to_string(), json!(tags));
             }
             if entities.contains(&"lists") {
-                let lists = sqlx::query_as::<_, serde_json::Value>(
+                let lists = sqlx::query_as::<_, (serde_json::Value,)>(
                     "SELECT id, name, list_type FROM lists WHERE tenant_id = $1 AND name ILIKE $2 LIMIT 20"
                 )
                 .bind(tenant_id).bind(&pattern)

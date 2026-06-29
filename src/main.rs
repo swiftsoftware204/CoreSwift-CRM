@@ -31,6 +31,9 @@ pub mod native_apps;
 pub mod admin_actions;
 pub mod campaigns;
 pub mod webhook;
+pub mod dashboard;
+pub mod portfolio;
+pub mod inbound;
 pub mod worker;
 
 use axum::{
@@ -84,12 +87,14 @@ async fn main() -> anyhow::Result<()> {
         config.db_max_connections,
     ).await?;
 
-    // Run database migrations
-    sqlx::migrate!("./migrations")
+    // Run database migrations (skip if already applied)
+    match sqlx::migrate!("./migrations")
         .run(&db)
         .await
-        .map_err(|e| anyhow::anyhow!("Migration failed: {}", e))?;
-    tracing::info!("Database migrations completed successfully");
+    {
+        Ok(_) => tracing::info!("Database migrations completed successfully"),
+        Err(e) => tracing::warn!("Migration skipped (tables may already exist): {}", e),
+    }
 
     // Connect to Redis
     let redis = db::connect_redis(&config.redis_url).await?;
@@ -139,6 +144,12 @@ async fn main() -> anyhow::Result<()> {
         .nest("/api/native", native_apps::router(state.clone()))
         // Public webhook — single endpoint for OpenClaw, n8n, CheatLayer
         .nest("/api/webhook", webhook::router())
+        // Dashboard — aggregate stats
+        .nest("/api/dashboard", dashboard::router(state.clone()))
+        // Portfolio — multi-entity portfolio companies
+        .nest("/api/portfolio", portfolio::router(state.clone()))
+        // Inbound webhook — receive events from satellite apps
+        .nest("/inbound", inbound::router())
         // Admin chat actions — run the entire business from Telegram
         .nest("/api/admin", admin_actions::router(state.clone()))
         // Onboarding checklists

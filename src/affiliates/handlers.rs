@@ -309,7 +309,7 @@ pub async fn delete_product(State(s): State<AppState>, Extension(c): Extension<C
 pub async fn products_by_tag(State(s): State<AppState>, Extension(c): Extension<Claims>) -> ApiResult<impl IntoResponse> {
     let tid = Uuid::parse_str(&c.tid).map_err(|_| AppError::Unauthorized)?;
 
-    let products = sqlx::query_as::<_, serde_json::Value>(
+    let products = sqlx::query_as::<_, (serde_json::Value,)>(
         r#"SELECT ap.*, t.name as tag_name, t.color as tag_color
            FROM affiliate_products ap
            LEFT JOIN tags t ON t.id = ap.tag_id
@@ -339,7 +339,7 @@ pub async fn list_my_products(State(s): State<AppState>, Extension(c): Extension
     .ok_or(AppError::NotFound("Affiliate profile not found. Create one first.".into()))?;
 
     // Products I'm currently promoting
-    let my_products = sqlx::query_as::<_, serde_json::Value>(
+    let my_products = sqlx::query_as::<_, (serde_json::Value,)>(
         r#"SELECT ap.*, aps.is_active as promoting, aps.promo_link, aps.custom_commission_rate, aps.selected_at
            FROM affiliate_product_selections aps
            JOIN affiliate_products ap ON ap.id = aps.product_id
@@ -351,7 +351,7 @@ pub async fn list_my_products(State(s): State<AppState>, Extension(c): Extension
     .await?;
 
     // Products available but not yet selected
-    let available = sqlx::query_as::<_, serde_json::Value>(
+    let available = sqlx::query_as::<_, (serde_json::Value,)>(
         r#"SELECT ap.*,
               CASE WHEN aps.id IS NOT NULL THEN true ELSE false END as already_selected
            FROM affiliate_products ap
@@ -389,14 +389,14 @@ pub async fn select_product(State(s): State<AppState>, Extension(c): Extension<C
         "SELECT COUNT(*) FROM affiliate_products WHERE id = $1 AND tenant_id = $2 AND is_active = true"
     )
     .bind(r.product_id).bind(tid)
-    .fetch_one(&s.db).await?
-        .ok_or(0).unwrap_or(0);
+    .fetch_one(&s.db).await
+        .unwrap_or(0);
 
     if product == 0 {
         return Err(AppError::NotFound("Product not found or not active".into()));
     }
 
-    let selection = sqlx::query_as::<_, serde_json::Value>(
+    let selection = sqlx::query_as::<_, (serde_json::Value,)>(
         r#"INSERT INTO affiliate_product_selections (id, affiliate_id, product_id, is_active, promo_link, custom_commission_rate)
            VALUES ($1, $2, $3, true, $4, $5)
            ON CONFLICT (affiliate_id, product_id) DO UPDATE SET is_active = true, updated_at = NOW()
@@ -410,7 +410,7 @@ pub async fn select_product(State(s): State<AppState>, Extension(c): Extension<C
     .fetch_one(&s.db)
     .await?;
 
-    Ok(Json(json!({"message": "Product selected for promotion", "selection": selection})))
+    Ok(Json(json!({"message": "Product selected for promotion", "selection": selection.0})))
 }
 
 /// POST /api/affiliates/my-products/unselect — Stop promoting a product

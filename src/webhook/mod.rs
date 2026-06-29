@@ -4,7 +4,7 @@
 //! External automation tools call this endpoint with the token in the URL
 //! and a JSON body specifying which action to perform.
 //!
-//! POST /api/webhook/{token}/{action}
+//! POST /api/webhook/:token/:action
 //! Body: { ...action-specific params... }
 //!
 //! This is the universal entry point so OpenClaw, n8n, and CheatLayer
@@ -19,5 +19,5 @@ use crate::AppState;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/{token}/{action}", axum::routing::post(handlers::handle_webhook))
+        .route("/:token/:action", axum::routing::post(handlers::handle_webhook))
 }

@@ -1,7 +1,7 @@
 -- 012_create_lists.sql
 -- Static and dynamic contact lists
 
-CREATE TABLE lists (
+CREATE TABLE IF NOT EXISTS lists (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
@@ -14,5 +14,5 @@ CREATE TABLE lists (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_lists_tenant_id ON lists(tenant_id);
-CREATE INDEX idx_lists_type ON lists(tenant_id, list_type);
+CREATE INDEX IF NOT EXISTS idx_lists_tenant_id ON lists(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_lists_type ON lists(tenant_id, list_type);
