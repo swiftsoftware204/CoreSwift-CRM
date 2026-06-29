@@ -6,7 +6,7 @@
 -- ============================================================
 
 -- Onboarding checklists (staged templates + per-tenant progress)
-CREATE TABLE checklist_templates (
+CREATE TABLE IF NOT EXISTS checklist_templates (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
@@ -19,7 +19,7 @@ CREATE TABLE checklist_templates (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE checklist_stages (
+CREATE TABLE IF NOT EXISTS checklist_stages (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     template_id UUID NOT NULL REFERENCES checklist_templates(id) ON DELETE CASCADE,
     stage_order INTEGER NOT NULL,
@@ -32,7 +32,7 @@ CREATE TABLE checklist_stages (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE checklist_instances (
+CREATE TABLE IF NOT EXISTS checklist_instances (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     template_id UUID NOT NULL REFERENCES checklist_templates(id),
@@ -45,7 +45,7 @@ CREATE TABLE checklist_instances (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE checklist_progress (
+CREATE TABLE IF NOT EXISTS checklist_progress (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     instance_id UUID NOT NULL REFERENCES checklist_instances(id) ON DELETE CASCADE,
     stage_order INTEGER NOT NULL,
@@ -60,7 +60,7 @@ CREATE TABLE checklist_progress (
 -- ACCOUNT HEALTH MONITORING
 -- ============================================================
 
-CREATE TABLE account_health (
+CREATE TABLE IF NOT EXISTS account_health (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     entity_type VARCHAR(50) NOT NULL,  -- 'tenant', 'trial_user', 'client'
@@ -75,7 +75,7 @@ CREATE TABLE account_health (
     UNIQUE(tenant_id, entity_type, entity_id)
 );
 
-CREATE TABLE health_thresholds (
+CREATE TABLE IF NOT EXISTS health_thresholds (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
@@ -94,7 +94,7 @@ CREATE TABLE health_thresholds (
 -- PRE-POPULATION DATA CACHE
 -- ============================================================
 
-CREATE TABLE prepopulated_data (
+CREATE TABLE IF NOT EXISTS prepopulated_data (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     source_url TEXT,

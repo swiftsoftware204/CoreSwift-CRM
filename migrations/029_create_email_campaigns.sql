@@ -1,7 +1,7 @@
 -- Email Campaigns Module
 -- Groups message templates into sequenced campaigns with scheduled delays
 
-CREATE TABLE email_campaigns (
+CREATE TABLE IF NOT EXISTS email_campaigns (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
@@ -13,10 +13,10 @@ CREATE TABLE email_campaigns (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_email_campaigns_tenant ON email_campaigns(tenant_id);
-CREATE INDEX idx_email_campaigns_status ON email_campaigns(tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_email_campaigns_tenant ON email_campaigns(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_email_campaigns_status ON email_campaigns(tenant_id, status);
 
-CREATE TABLE email_campaign_steps (
+CREATE TABLE IF NOT EXISTS email_campaign_steps (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     campaign_id UUID NOT NULL REFERENCES email_campaigns(id) ON DELETE CASCADE,
     step_order INTEGER NOT NULL,
@@ -27,10 +27,10 @@ CREATE TABLE email_campaign_steps (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_email_campaign_steps_campaign ON email_campaign_steps(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_email_campaign_steps_campaign ON email_campaign_steps(campaign_id);
 
 -- Links campaigns to tags: when a contact gets this tag, start the campaign
-CREATE TABLE email_campaign_triggers (
+CREATE TABLE IF NOT EXISTS email_campaign_triggers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     campaign_id UUID NOT NULL REFERENCES email_campaigns(id) ON DELETE CASCADE,
     tag_id UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
@@ -41,7 +41,7 @@ CREATE TABLE email_campaign_triggers (
 );
 
 -- Tracks which contacts are in which campaign and what step they're on
-CREATE TABLE email_campaign_enrollments (
+CREATE TABLE IF NOT EXISTS email_campaign_enrollments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     campaign_id UUID NOT NULL REFERENCES email_campaigns(id) ON DELETE CASCADE,
     entity_type TEXT NOT NULL DEFAULT 'contact',
@@ -56,13 +56,13 @@ CREATE TABLE email_campaign_enrollments (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_email_campaign_enrollments_campaign ON email_campaign_enrollments(campaign_id);
-CREATE INDEX idx_email_campaign_enrollments_entity ON email_campaign_enrollments(entity_type, entity_id);
-CREATE INDEX idx_email_campaign_enrollments_next_send ON email_campaign_enrollments(next_send_at)
+CREATE INDEX IF NOT EXISTS idx_email_campaign_enrollments_campaign ON email_campaign_enrollments(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_email_campaign_enrollments_entity ON email_campaign_enrollments(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_email_campaign_enrollments_next_send ON email_campaign_enrollments(next_send_at)
     WHERE status = 'active' AND next_send_at IS NOT NULL;
 
 -- Tag sync log: tracks which tags have been synced between systems
-CREATE TABLE tag_sync_log (
+CREATE TABLE IF NOT EXISTS tag_sync_log (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     source TEXT NOT NULL,

@@ -1,7 +1,7 @@
 -- 015_create_integrations.sql
 -- External system connection configurations
 
-CREATE TABLE integrations (
+CREATE TABLE IF NOT EXISTS integrations (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
@@ -13,5 +13,5 @@ CREATE TABLE integrations (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_integrations_tenant ON integrations(tenant_id);
-CREATE INDEX idx_integrations_provider ON integrations(tenant_id, provider);
+CREATE INDEX IF NOT EXISTS idx_integrations_tenant ON integrations(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_integrations_provider ON integrations(tenant_id, provider);

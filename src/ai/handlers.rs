@@ -117,7 +117,7 @@ pub async fn compose_message(State(s): State<AppState>, Extension(c): Extension<
 
     // Get contact info for personalization
     let contact = sqlx::query_as::<_, (String, String, Option<String>)>(
-        "SELECT name, email, phone FROM contacts WHERE id = $1 AND tenant_id = $2"
+        "SELECT CONCAT(first_name, ' ', last_name) AS name, email, phone FROM contacts WHERE id = $1 AND tenant_id = $2"
     ).bind(r.contact_id).bind(tid).fetch_optional(&s.db).await?
     .ok_or(AppError::NotFound("Contact not found".to_string()))?;
 

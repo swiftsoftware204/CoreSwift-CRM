@@ -1,7 +1,7 @@
 -- 014_create_automation_rules.sql
 -- Trigger → Action automation engine
 
-CREATE TABLE automation_rules (
+CREATE TABLE IF NOT EXISTS automation_rules (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
@@ -17,6 +17,6 @@ CREATE TABLE automation_rules (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_automation_rules_tenant ON automation_rules(tenant_id);
-CREATE INDEX idx_automation_rules_trigger ON automation_rules(tenant_id, trigger_type);
-CREATE INDEX idx_automation_rules_active ON automation_rules(tenant_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_automation_rules_tenant ON automation_rules(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_automation_rules_trigger ON automation_rules(tenant_id, trigger_type);
+CREATE INDEX IF NOT EXISTS idx_automation_rules_active ON automation_rules(tenant_id, is_active);

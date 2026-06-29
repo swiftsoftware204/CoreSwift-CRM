@@ -1,7 +1,7 @@
 -- 007_create_opportunities.sql
 -- Deals/opportunities linked to contacts and pipeline stages
 
-CREATE TABLE opportunities (
+CREATE TABLE IF NOT EXISTS opportunities (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     pipeline_id UUID NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
@@ -23,14 +23,14 @@ CREATE TABLE opportunities (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_opportunities_tenant_id ON opportunities(tenant_id);
-CREATE INDEX idx_opportunities_pipeline ON opportunities(pipeline_id);
-CREATE INDEX idx_opportunities_stage ON opportunities(stage_id);
-CREATE INDEX idx_opportunities_contact ON opportunities(contact_id);
-CREATE INDEX idx_opportunities_value ON opportunities(tenant_id, value);
+CREATE INDEX IF NOT EXISTS idx_opportunities_tenant_id ON opportunities(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_opportunities_pipeline ON opportunities(pipeline_id);
+CREATE INDEX IF NOT EXISTS idx_opportunities_stage ON opportunities(stage_id);
+CREATE INDEX IF NOT EXISTS idx_opportunities_contact ON opportunities(contact_id);
+CREATE INDEX IF NOT EXISTS idx_opportunities_value ON opportunities(tenant_id, value);
 
 -- Stage history for tracking movement over time
-CREATE TABLE opportunity_stage_history (
+CREATE TABLE IF NOT EXISTS opportunity_stage_history (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     opportunity_id UUID NOT NULL REFERENCES opportunities(id) ON DELETE CASCADE,
     from_stage_id UUID REFERENCES pipeline_stages(id) ON DELETE SET NULL,
@@ -39,5 +39,5 @@ CREATE TABLE opportunity_stage_history (
     moved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_stage_history_opportunity ON opportunity_stage_history(opportunity_id);
-CREATE INDEX idx_stage_history_time ON opportunity_stage_history(moved_at);
+CREATE INDEX IF NOT EXISTS idx_stage_history_opportunity ON opportunity_stage_history(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_stage_history_time ON opportunity_stage_history(moved_at);

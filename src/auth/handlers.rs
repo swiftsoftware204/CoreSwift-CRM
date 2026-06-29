@@ -4,7 +4,7 @@
 //! or an existing tenant slug can be specified.
 
 use axum::{
-    extract::{State, Json, Request},
+    extract::{State, Json, Request, Extension},
     http::StatusCode,
     response::IntoResponse,
 };
@@ -226,14 +226,14 @@ pub async fn me(
 }
 
 /// POST /api/auth/invite — Owner/admin creates an invite link for their tenant.
+/// Auth middleware injects Claims as Extension.
 pub async fn create_invite(
     State(state): State<AppState>,
-    request: Request,
+    Extension(claims): Extension<Claims>,
     Json(req): Json<CreateInviteRequest>,
 ) -> ApiResult<impl IntoResponse> {
-    let claims = extract_claims(&request, &state)?;
     if claims.role != "owner" && claims.role != "admin" {
-        return Err(AppError::Forbidden("Only owners and admins can create invites".into()));
+        return Err(AppError::Forbidden);
     }
 
     let tenant_id = Uuid::parse_str(&claims.tid).map_err(|_| AppError::Unauthorized)?;
@@ -264,11 +264,11 @@ pub async fn list_invites(
 ) -> ApiResult<impl IntoResponse> {
     let claims = extract_claims(&request, &state)?;
     if claims.role != "owner" && claims.role != "admin" {
-        return Err(AppError::Forbidden("Admin access required".into()));
+        return Err(AppError::Forbidden);
     }
 
     let tenant_id = Uuid::parse_str(&claims.tid).map_err(|_| AppError::Unauthorized)?;
-    let invites = sqlx::query_as::<_, serde_json::Value>(
+    let invites = sqlx::query_as::<_, (serde_json::Value,)>(
         "SELECT id, token, role, accepted, expires_at, created_at FROM tenant_invites WHERE tenant_id = $1 ORDER BY created_at DESC"
     )
     .bind(tenant_id)
