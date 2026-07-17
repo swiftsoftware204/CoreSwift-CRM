@@ -17,11 +17,11 @@ pub mod router;
 pub mod models;
 pub mod engine;
 
-use axum::Router;
+use axum::{Router, middleware};
 use crate::AppState;
 
 /// Build the AI router with auth middleware.
-pub fn router() -> Router<AppState> {
+pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/prioritize", axum::routing::post(handlers::prioritize))
         .route("/predict", axum::routing::post(handlers::predict))
@@ -31,4 +31,5 @@ pub fn router() -> Router<AppState> {
         .route("/channel", axum::routing::post(handlers::suggest_channel))
         .route("/timing", axum::routing::post(handlers::suggest_timing))
         .route("/risk", axum::routing::post(handlers::assess_churn_risk))
+        .layer(middleware::from_fn_with_state(state.clone(), crate::auth::middleware::auth_middleware))
 }

@@ -390,7 +390,8 @@ async fn resolve_account(
         })?;
         // Auto-assign Free Plan to new tenant
         {
-            let free_plan_id = uuid::Uuid::parse_str("ebbdca8c-6ad7-48cb-b580-d321b536671a").unwrap();
+            let free_plan_id = uuid::Uuid::parse_str("ebbdca8c-6ad7-48cb-b580-d321b536671a")
+                .map_err(|_| AppError::BadRequest("Invalid plan UUID".into()))?;
             let _ = sqlx::query(
                 r#"INSERT INTO tenant_plans (tenant_id, plan_id, status, billing_cycle)
                    VALUES ($1, $2, 'active', 'monthly')
@@ -421,7 +422,8 @@ async fn resolve_account(
         })?;
         // Auto-assign Free Plan to new tenant
         {
-            let free_plan_id = uuid::Uuid::parse_str("ebbdca8c-6ad7-48cb-b580-d321b536671a").unwrap();
+            let free_plan_id = uuid::Uuid::parse_str("ebbdca8c-6ad7-48cb-b580-d321b536671a")
+                .map_err(|_| AppError::BadRequest("Invalid plan UUID".into()))?;
             let _ = sqlx::query(
                 r#"INSERT INTO tenant_plans (tenant_id, plan_id, status, billing_cycle)
                    VALUES ($1, $2, 'active', 'monthly')
@@ -494,6 +496,8 @@ fn generate_tokens(user: &TeamMember, state: &AppState) -> Result<(String, Strin
         role: user.role.clone(),
         exp: access_exp,
         iat: now,
+        aud: Some("coreswift-api".to_string()),
+        iss: Some("coreswift".to_string()),
     };
     let access_token = middleware::create_access_token(&access_claims, &state.config.jwt_secret)?;
 
@@ -503,6 +507,8 @@ fn generate_tokens(user: &TeamMember, state: &AppState) -> Result<(String, Strin
         role: user.role.clone(),
         exp: refresh_exp,
         iat: now,
+        aud: Some("coreswift-api".to_string()),
+        iss: Some("coreswift".to_string()),
     };
     let refresh_token = middleware::create_access_token(&refresh_claims, &state.config.jwt_secret)?;
 
